@@ -1,0 +1,86 @@
+# ============================================================
+#  STM32 / Arduino 嵌入式项目 通用 .gitignore
+# ============================================================
+
+# ------------------------------------------------------------
+# 编译产物
+# ------------------------------------------------------------
+*.o
+*.a
+*.d
+*.elf
+*.bin
+*.hex
+*.eep
+*.lss
+*.map
+*.sym
+*.list
+
+# Arduino 构建缓存
+build/
+build-*/
+.arduino15/
+.arduino/
+*.arduino.bak
+
+# Arduino IDE 1.8.x 生成的 sketch 备份
+*.ino.bak
+*.pde.bak
+
+# ------------------------------------------------------------
+# 编辑器 / IDE
+# ------------------------------------------------------------
+.vscode/
+.idea/
+*.code-workspace
+
+# STM32CubeIDE / Keil / IAR（后续如果加入 HAL 工程）
+Debug/
+Release/
+*.ioc.launch
+*.uvguix.*
+*.uvoptx
+*.uvprojx
+JLinkLog.txt
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+platformio.ini.user
+
+# ------------------------------------------------------------
+# 操作系统
+# ------------------------------------------------------------
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux
+.directory
+.Trash-*
+
+# ------------------------------------------------------------
+# 其它
+# ------------------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 凭证 / 本地配置（切勿提交 token、密码）
+*.token
+.env
+secrets.h

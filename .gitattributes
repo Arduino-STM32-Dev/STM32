@@ -1,0 +1,40 @@
+# ============================================================
+#  Git 行尾与文件类型规范
+#  避免 Windows / macOS / Linux 之间因行尾差异产生噪声 diff
+# ============================================================
+
+# 默认：文本文件统一以 LF 存入仓库，检出时按平台自动转换
+* text=auto eol=lf
+
+# 明确指定为文本
+*.ino   text eol=lf
+*.pde   text eol=lf
+*.c     text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.properties text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# 二进制文件：不做任何行尾转换，不参与 diff
+*.o     binary
+*.a     binary
+*.bin   binary
+*.hex   binary
+*.elf   binary
+*.eep   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.pdf   binary
+*.zip   binary
+
+# 语言统计：把 .ino 当作 C++ 计入
+*.ino linguist-language=C++
+*.pde linguist-language=C++
