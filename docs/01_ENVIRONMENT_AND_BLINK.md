@@ -92,7 +92,7 @@ PA5 ──►│── 面包板 GND 轨 ── STM32 GND
 
 ### 接线实拍
 
-![面包板接线实拍](../Image_and_video/day01_green_led_breadboard.jpg)
+![面包板接线实拍](../Image_and_video/green_led_breadboard.jpg)
 
 ---
 
