@@ -15,6 +15,8 @@
 
 一份写给**嵌入式新手**的 STM32 实践教程，目前包含 4 篇，沿着「数字输出 → PWM → 输入 → 功率驱动」这条最自然的主线往前走。
 
+`firmware/` 里还放了一份**物联网联调**固件（[`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)）：STM32 通过 `Serial1` 接收 **ESP32** 经 MQTT 转发的无线指令，直接控制板载 LED，是「树莓派 → ESP32 → STM32」三级控制链路的终端层实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)。
+
 STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡住，所以本教程改用 **Arduino IDE + STM32duino 核心库**的路线：不装重型 IDE，Arduino 生态的库即装即用，先把硬件跑通、把信心建立起来。等以后需要寄存器级或 HAL 开发时，再平滑切换到 STM32CubeIDE 也完全来得及。
 
 **跟着做完，你会掌握：**
@@ -26,6 +28,7 @@ STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡�
 - **有源 / 无源蜂鸣器**的区别与驱动方式
 - 用 **TB6612FNG** 驱动直流电机，写一个多档位状态机
 - 硬件排错的基本功：**短接法**查杜邦线、从板载 LED 判断**欠压复位**、**独立供电 + 共地**
+- 用 **`Serial1` + `readStringUntil('\n')`** 和 ESP32 做 UART 联调，接入 MQTT 无线控制链路
 
 ---
 
@@ -72,8 +75,10 @@ STM32/
 │   │   └── Buzzer_test.ino
 │   ├── use_button_control_fan/                ← 教程 04-1：按住按键电机就转（先验证硬件）
 │   │   └── use_button_control_fan.ino
-│   └── MultiSpeed_Fan/                        ← 教程 04-2：按键循环切换 0~3 档风速
-│       └── MultiSpeed_Fan.ino
+│   ├── MultiSpeed_Fan/                        ← 教程 04-2：按键循环切换 0~3 档风速
+│   │   └── MultiSpeed_Fan.ino
+│   └── raspberry-control-stm32/               ← 物联网联调：Serial1 接收 ESP32 指令，控制板载 LED
+│       └── raspberry-control-stm32.ino
 ├── Image_and_video/                           ← 接线实拍与演示素材
 │   ├── green_led_breadboard.jpg
 │   ├── Buzzer_test.jpg
@@ -141,6 +146,51 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 
 ---
 
+## 🔗 物联网联调：接收 ESP32 的无线指令
+
+当 STM32 从「面包板上的练习」变成「无线控制系统的执行终端」时，它不再靠按键输入，而是通过 **`Serial1`** 接收 ESP32 经 UART 转发的指令。
+
+```text
+[树莓派 5 · MQTT Broker]
+      ⬆ WiFi / MQTT  主题 pi/to/esp32 → esp32/status
+[ESP32 · 无线网关]
+      ⬇ UART 115200, 8N1
+[STM32 · 执行终端]  firmware/raspberry-control-stm32/
+```
+
+**接线（注意 TX / RX 交叉）：**
+
+| ESP32 | STM32 | 说明 |
+| --- | --- | --- |
+| `D17` (TX2) | `PA10` (RX) | 指令下发 |
+| `D16` (RX2) | `PA9` (TX) | 状态回传 |
+| `GND` | `GND` | **共地（必须）** |
+
+> ⚠️ ESP32 与 STM32 **各自独立供电**，请勿把 VCC 直接互连。
+
+**跑通步骤：**
+
+1. 烧录 [`firmware/raspberry-control-stm32/raspberry-control-stm32.ino`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino) 到 STM32。
+2. 按上表接好三根线，ESP32 烧录网关固件 —— 见 [esp32 仓库](https://github.com/Arduino-STM32-Dev/esp32)。
+3. 在树莓派终端下发指令：
+
+```bash
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "LED_ON"    # 点亮 PC13
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "LED_OFF"   # 熄灭 PC13
+mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
+```
+
+**指令对照：**
+
+| 指令 | STM32 动作 | 回传 |
+| --- | --- | --- |
+| `LED_ON` | `PC13` 输出 `LOW`（板载 LED 低电平点亮） | `LED 已打开` |
+| `LED_OFF` | `PC13` 输出 `HIGH` | `LED 已关闭` |
+
+> ⚠️ **换行符约定**：STM32 用 `readStringUntil('\n')` 解析，所以 ESP32 必须用 `println()` 发送；STM32 回传同样用 `println()`，ESP32 才能按行读到。两端成对使用，否则会收到空串。
+
+---
+
 ## 🔌 引脚速查
 
 ### 各篇教程用到的引脚
@@ -164,6 +214,8 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 | --- | --- | --- |
 | `PA13` | SWDIO | 接 ST-Link 的 SWDIO，烧录用 |
 | `PA14` | SWCLK | 接 ST-Link 的 SWCLK，烧录用 |
+| `PA9` | `Serial1` TX | 接 ESP32 的 `D16` (RX2)，**状态回传** |
+| `PA10` | `Serial1` RX | 接 ESP32 的 `D17` (TX2)，**接收指令** |
 | `PC13` | 板载 LED（红色） | **低电平点亮** ⚠️ 与外接 LED 相反；**闪一下 = 复位** |
 | `GND` | 共地 | 与 ST-Link、面包板、**外部电源**都必须连在一起 |
 | `3.3V` / `5V` | 供电 | 板子已用 USB 供电时可不接 ST-Link 的 3.3V |
