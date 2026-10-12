@@ -1,36 +1,100 @@
-// STM32F103C8T6 UART 通信测试
-// PA9  = Serial1 TX (接 ESP32 的 D16/RX2)
-// PA10 = Serial1 RX (接 ESP32 的 D17/TX2)
+#include <DHT.h>
+
+// --- 引脚定义 ---
+#define DHTPIN PA0
+#define DHTTYPE DHT11
+#define AIN1 PB12
+#define AIN2 PB13
+#define PWMA PA5
+#define BUTTON_PIN PA2
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// --- 状态变量 ---
+bool isFanOn = false;
+int lastButtonState = HIGH;
+
+// --- 时间戳变量 (非阻塞核心) ---
+unsigned long lastDhtReadTime = 0;
+unsigned long lastSerialSendTime = 0;
+const long dhtInterval = 2000;    
+const long serialInterval = 2000; 
+float currentTemp = 0.0;
+float currentHumi = 0.0;
 
 void setup() {
-  // 初始化与 ESP32 通信的串口，波特率 115200
-  Serial1.begin(115200);
+  pinMode(AIN1, OUTPUT);
+  pinMode(AIN2, OUTPUT);
+  pinMode(PWMA, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
   
-  // 板载 LED (PC13) 初始化，用来指示程序运行状态
-  pinMode(PC13, OUTPUT);
+  // 初始状态：停止
+  digitalWrite(AIN1, HIGH);
+  digitalWrite(AIN2, LOW);
+  analogWrite(PWMA, 0); 
+
+  // 初始化串口（向ESP32发送数据，读取ESP32发来的指令）
+  Serial.begin(9600);
+  Serial.setTimeout(10); // 极其关键！防止串口读取阻塞导致按键失灵
   
-  // 给一点时间让串口稳定
-  delay(1000);
-  Serial1.println("STM32 已启动，等待 ESP32 发送数据...");
+  // 初始化DHT11
+  dht.begin();
 }
 
 void loop() {
-  if (Serial1.available() > 0) {
-    String command = Serial1.readStringUntil('\n');
-    command.trim(); // 清除回车和换行
-    
-    // 打印接收到的指令
-    Serial1.print("STM32 收到: ");
-    Serial1.println(command);
-    
-    // 根据指令控制 PC13 绿灯
-    if (command == "LED_ON") {
-      digitalWrite(PC13, LOW);  // 大部分 BluePill 板载 LED 是低电平点亮
-      Serial1.println("LED 已打开");
-    } 
-    else if (command == "LED_OFF") {
-      digitalWrite(PC13, HIGH); // 关灯
-      Serial1.println("LED 已关闭");
+  unsigned long currentMillis = millis();
+
+  // ==========================================
+  // 任务1：本地物理按键检测
+  // ==========================================
+  int currentButtonState = digitalRead(BUTTON_PIN);
+  if (currentButtonState == LOW && lastButtonState == HIGH) {
+    isFanOn = !isFanOn;
+    analogWrite(PWMA, isFanOn ? 150 : 0);
+    delay(50); // 仅用于按键消抖
+  }
+  lastButtonState = currentButtonState;
+
+  // ==========================================
+  // 任务2：读取DHT11（2秒一次）
+  // ==========================================
+  if (currentMillis - lastDhtReadTime >= dhtInterval) {
+    lastDhtReadTime = currentMillis;
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+    if (!isnan(t) && !isnan(h)) {
+      currentTemp = t;
+      currentHumi = h;
     }
+  }
+
+  // ==========================================
+  // 任务3：接收来自ESP32的远程指令（新增！）
+  // ==========================================
+  if (Serial.available() > 0) {
+    String cmd = Serial.readStringUntil('\n'); 
+    cmd.trim(); // 去除回车换行符和空格
+    
+    if (cmd == "FAN_ON") {
+      isFanOn = true;
+      analogWrite(PWMA, 150); // 远程开启低速
+    } 
+    else if (cmd == "FAN_OFF") {
+      isFanOn = false;
+      analogWrite(PWMA, 0);   // 远程关闭
+    }
+  }
+
+  // ==========================================
+  // 任务4：通过串口向ESP32发送数据（2秒一次）
+  // ==========================================
+  if (currentMillis - lastSerialSendTime >= serialInterval) {
+    lastSerialSendTime = currentMillis;
+    Serial.print("T:");
+    Serial.print(currentTemp);
+    Serial.print(",H:");
+    Serial.print(currentHumi);
+    Serial.print(",F:");
+    Serial.println(isFanOn ? 1 : 0);
   }
 }

@@ -1,7 +1,7 @@
 # 🔧 STM32 入门教程：从点亮第一颗 LED 到驱动直流电机
 
 > **不用 STM32CubeMX，也不用啃寄存器手册。**
-> 本教程带你从零把 STM32F103 跑起来 —— 装环境、接线、烧录、排错，再一路做呼吸灯、蜂鸣器、多档位风扇，每一步都可以照着复现。
+> 本教程带你从零把 STM32F103 跑起来 —— 装环境、接线、烧录、排错，再一路做呼吸灯、蜂鸣器、多档位风扇，最后接入无线控制链路，做出一个带**红外安全互锁**的边缘执行终端，每一步都可以照着复现。
 
 [![Platform](https://img.shields.io/badge/platform-STM32F103C8T6-03234B?logo=stmicroelectronics&logoColor=white)](https://www.st.com/)
 [![IDE](https://img.shields.io/badge/IDE-Arduino%20IDE%202.x-00979D?logo=arduino&logoColor=white)](https://www.arduino.cc/en/software)
@@ -13,9 +13,13 @@
 
 ## 📖 这是什么
 
-一份写给**嵌入式新手**的 STM32 实践教程，目前包含 4 篇，沿着「数字输出 → PWM → 输入 → 功率驱动」这条最自然的主线往前走。
+一份写给**嵌入式新手**的 STM32 实践教程，目前包含 5 篇，沿着「数字输出 → PWM → 输入 → 功率驱动 → 边缘安全互锁」这条最自然的主线往前走。
 
-`firmware/` 里还放了一份**物联网联调**固件（[`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)）：STM32 通过 `Serial1` 接收 **ESP32** 经 MQTT 转发的无线指令，直接控制板载 LED，是「树莓派 → ESP32 → STM32」三级控制链路的终端层实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)。
+`firmware/` 里另外放了三份**面向真实项目**的固件，是「树莓派 → ESP32 → STM32」三级控制链路中的**终端层**实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)：
+
+- [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)：**第一步联调** —— 通过 `Serial` 接收 ESP32 转发的指令，控制板载 LED，先用最小代价把链路跑通。
+- [`servo-control`](firmware/servo-control/servo-control.ino)：DHT11 + TB6612 + 舵机 + OLED 的完整外设版本，本地自动温控。
+- [`edge_compute`](firmware/edge_compute/edge_compute.ino)：**当前主力固件** —— 在上一版基础上加入 **TCRT5000 红外安全互锁**，危险时本地强制急停，并锁死远程的「开启类」指令。
 
 STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡住，所以本教程改用 **Arduino IDE + STM32duino 核心库**的路线：不装重型 IDE，Arduino 生态的库即装即用，先把硬件跑通、把信心建立起来。等以后需要寄存器级或 HAL 开发时，再平滑切换到 STM32CubeIDE 也完全来得及。
 
@@ -27,8 +31,10 @@ STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡�
 - **按键输入**：内部上拉、边沿检测、软件消抖
 - **有源 / 无源蜂鸣器**的区别与驱动方式
 - 用 **TB6612FNG** 驱动直流电机，写一个多档位状态机
+- 用 **DHT11** 采集温湿度、**舵机**做阀门、**U8g2** 驱动 OLED，并用 `millis()` 把 6 个任务组织成非阻塞结构
+- **边缘安全互锁**：用 TCRT5000 红外光电开关做最高优先级任务，危险时本地强制急停，并锁死远程的开启类指令
 - 硬件排错的基本功：**短接法**查杜邦线、从板载 LED 判断**欠压复位**、**独立供电 + 共地**
-- 用 **`Serial1` + `readStringUntil('\n')`** 和 ESP32 做 UART 联调，接入 MQTT 无线控制链路
+- 用 **`Serial` + `readStringUntil('\n')`** 和 ESP32 做 UART 联调，接入 MQTT 无线控制链路
 
 ---
 
@@ -48,6 +54,10 @@ STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡�
 | ST-Link V2 仿真器 | 1 | SWD 烧录。⚠️ 不能同时被 STM32CubeProgrammer 占用 |
 | TB6612FNG 电机驱动模块 | 1 | 教程 04 用，双 H 桥 |
 | 130 直流电机 + 扇叶 | 1 | 教程 04 用 |
+| TCRT5000 红外光电开关模块 | 1 | 教程 05 用，遮挡触发（输出 `LOW`），是**安全互锁的输入源** |
+| SG90 舵机（180°） | 1 | 教程 05 用，模拟阀门开 / 关（`90°` / `0°`） |
+| DHT11 温湿度模块 | 1 | 教程 05 用，三针模块自带 4.7K 上拉，接 `PA0` |
+| 0.96" OLED 显示屏（SSD1306, I2C） | 1 | 教程 05 用，**硬件 I2C**，地址通常为 `0x3C` |
 | 有源蜂鸣器模块 | 1 | 教程 03 用（教程用的是 MH-FMD 三针模块） |
 | 两脚常开按键 | 1 | 教程 02 / 03 / 04 用，接 `INPUT_PULLUP` |
 | 面包板 | 1 | |
@@ -55,7 +65,7 @@ STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡�
 | 杜邦线（母对母） | 若干 | ⚠️ 质量参差，内部断线是「玄学故障」头号嫌疑人 |
 | 1KΩ 电阻 | 1 | 限流用。⚠️ 教程 01 实测时未接，LED 偏暗，**建议你接上** |
 | USB Micro 数据线 | 1 | 给开发板供电 |
-| 外部 5V 电源（电池盒 / 充电宝） | 1 | 教程 04 用。⚠️ 驱动电机**强烈建议**配一个 |
+| 外部 5V 电源（电池盒 / 充电宝） | 1 | 教程 04 / 05 用。⚠️ 驱动电机和舵机**强烈建议**配一个，并与 STM32 **共地** |
 
 ---
 
@@ -77,8 +87,12 @@ STM32/
 │   │   └── use_button_control_fan.ino
 │   ├── MultiSpeed_Fan/                        ← 教程 04-2：按键循环切换 0~3 档风速
 │   │   └── MultiSpeed_Fan.ino
-│   └── raspberry-control-stm32/               ← 物联网联调：Serial1 接收 ESP32 指令，控制板载 LED
-│       └── raspberry-control-stm32.ino
+│   ├── raspberry-control-stm32/               ← 联调 01：Serial 接收 ESP32 指令，控制板载 LED
+│   │   └── raspberry-control-stm32.ino
+│   ├── servo-control/                         ← 联调 02：DHT11 + TB6612 + 舵机 + OLED，本地自动温控
+│   │   └── servo-control.ino
+│   └── edge_compute/                          ← 教程 05（主力）：红外安全互锁 + 远程指令 + 状态上报
+│       └── edge_compute.ino
 ├── Image_and_video/                           ← 接线实拍与演示素材
 │   ├── green_led_breadboard.jpg
 │   ├── Buzzer_test.jpg
@@ -87,7 +101,8 @@ STM32/
     ├── 01_ENVIRONMENT_AND_BLINK.md            ← 教程 01：环境搭建、接线与排错
     ├── 02_PWM_AND_BREATHING_LED.md            ← 教程 02：PWM 调光与呼吸灯
     ├── 03_BUTTON_AND_BUZZER.md                ← 教程 03：按键控制有源蜂鸣器
-    └── 04_DC_MOTOR_MULTI_SPEED_FAN.md         ← 教程 04：TB6612 驱动电机与多档位风扇
+    ├── 04_DC_MOTOR_MULTI_SPEED_FAN.md         ← 教程 04：TB6612 驱动电机与多档位风扇
+    └── 05_EDGE_SAFETY_INTERLOCK.md            ← 教程 05：红外安全互锁与边缘计算
 ```
 
 ---
@@ -140,7 +155,7 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 
 🎉 **LED 开始闪烁，说明整条链路已经通了。**
 
-到这里「工具链」就搭好了，后面 02 / 03 / 04 篇可以直接在 Arduino IDE 里换个 sketch 上传，环境不需要再动。
+到这里「工具链」就搭好了，后面 02 / 03 / 04 / 05 篇可以直接在 Arduino IDE 里换个 sketch 上传，环境不需要再动。
 
 > 🔍 接线照片、逐项报错排查和原理说明，见 **[docs/01_ENVIRONMENT_AND_BLINK.md](docs/01_ENVIRONMENT_AND_BLINK.md)**。
 
@@ -148,14 +163,14 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 
 ## 🔗 物联网联调：接收 ESP32 的无线指令
 
-当 STM32 从「面包板上的练习」变成「无线控制系统的执行终端」时，它不再靠按键输入，而是通过 **`Serial1`** 接收 ESP32 经 UART 转发的指令。
+当 STM32 从「面包板上的练习」变成「无线控制系统的执行终端」时，它不再靠按键输入，而是通过 **UART** 接收 ESP32 经 MQTT 转发的指令，并把传感器数据回传上去。
 
 ```text
-[树莓派 5 · MQTT Broker]
-      ⬆ WiFi / MQTT  主题 pi/to/esp32 → esp32/status
-[ESP32 · 无线网关]
-      ⬇ UART 115200, 8N1
-[STM32 · 执行终端]  firmware/raspberry-control-stm32/
+[树莓派 5 · MQTT Broker]       订阅 home/fan/status
+      ⬆ WiFi / MQTT  主题 pi/to/esp32
+[ESP32 · 无线网关]  firmware/cache_control（断网缓存 + 非阻塞队列）
+      ⬇ UART 9600, 8N1
+[STM32 · 执行终端]  firmware/edge_compute（红外安全互锁）
 ```
 
 **接线（注意 TX / RX 交叉）：**
@@ -170,22 +185,42 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 
 **跑通步骤：**
 
-1. 烧录 [`firmware/raspberry-control-stm32/raspberry-control-stm32.ino`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino) 到 STM32。
+1. 烧录 [`firmware/edge_compute/edge_compute.ino`](firmware/edge_compute/edge_compute.ino) 到 STM32（想先跑最小链路，也可以先用 [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)）。
 2. 按上表接好三根线，ESP32 烧录网关固件 —— 见 [esp32 仓库](https://github.com/Arduino-STM32-Dev/esp32)。
 3. 在树莓派终端下发指令：
 
 ```bash
-mosquitto_pub -h localhost -t "pi/to/esp32" -m "LED_ON"    # 点亮 PC13
-mosquitto_pub -h localhost -t "pi/to/esp32" -m "LED_OFF"   # 熄灭 PC13
-mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "FAN_ON"       # 开风扇（PWM 150）
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "FAN_OFF"      # 关风扇
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "VALVE_OPEN"   # 开阀门（舵机 90°）
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "VALVE_CLOSE"  # 关阀门（舵机 0°）
+mosquitto_sub -h localhost -t "home/fan/status" -v            # 看回传状态
 ```
 
 **指令对照：**
 
-| 指令 | STM32 动作 | 回传 |
+| 指令 | STM32 动作 | 安全锁 |
 | --- | --- | --- |
-| `LED_ON` | `PC13` 输出 `LOW`（板载 LED 低电平点亮） | `LED 已打开` |
-| `LED_OFF` | `PC13` 输出 `HIGH` | `LED 已关闭` |
+| `FAN_ON` | `analogWrite(PWMA, 150)`，风扇转动 | ⚠️ 警报时**被忽略** |
+| `FAN_OFF` | `analogWrite(PWMA, 0)`，风扇停止 | ✅ 永远执行 |
+| `VALVE_OPEN` | `valveServo.write(90)`，阀门打开 | ⚠️ 警报时**被忽略** |
+| `VALVE_CLOSE` | `valveServo.write(0)`，阀门关闭 | ✅ 永远执行 |
+
+**回传格式（每 2 秒一行）：**
+
+```text
+T:25.00,H:60.00,F:1,V:0,S:1
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `T:` | 温度（℃） |
+| `H:` | 湿度（%） |
+| `F:` | 风扇状态，`1` 开 / `0` 关 |
+| `V:` | 阀门状态，`1` 开 / `0` 关 |
+| `S:` | **安全状态，`1` 安全 / `0` 警报** |
+
+> 🛡️ **本地安全优先**：`edge_compute` 把红外检测放在 `loop()` 的**任务 1**。一旦遮挡触发，它不等云端指令，直接 `analogWrite(PWMA, 0)` + `valveServo.write(0)` 并置位 `isSafetyAlert`；此后所有**开启类**动作（本地按键、自动温控、远程 `FAN_ON` / `VALVE_OPEN`）全部被锁死，而**关闭类**指令始终有效 —— 也就是「**危险只能让系统停下来，不能让系统动起来**」。详见 [教程 05](docs/05_EDGE_SAFETY_INTERLOCK.md)。
 
 > ⚠️ **换行符约定**：STM32 用 `readStringUntil('\n')` 解析，所以 ESP32 必须用 `println()` 发送；STM32 回传同样用 `println()`，ESP32 才能按行读到。两端成对使用，否则会收到空串。
 
@@ -202,9 +237,12 @@ mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
 | `PA5` | 03 | 蜂鸣器模块 `I/O` | 见 [03 篇触发极性说明](docs/03_BUTTON_AND_BUZZER.md) |
 | `PA5` | 04 | TB6612 的 `PWMA` | `analogWrite()` 0~255 |
 | `PA1` | 02 / 03 | 按键（`INPUT_PULLUP`） | 按下 = `LOW` |
-| `PA2` | 04 | 按键（`INPUT_PULLUP`） | 按下 = `LOW` |
-| `PB12` | 04 | TB6612 的 `AIN1` | 方向控制 |
-| `PB13` | 04 | TB6612 的 `AIN2` | 方向控制 |
+| `PA2` | 04 / 05 | 按键（`INPUT_PULLUP`） | 按下 = `LOW` |
+| `PB12` | 04 / 05 | TB6612 的 `AIN1` | 方向控制 |
+| `PB13` | 04 / 05 | TB6612 的 `AIN2` | 方向控制 |
+| `PA0` | 05 | DHT11 数据脚 | 单总线，模块自带 4.7K 上拉 |
+| `PB0` | 05 | 舵机信号（模拟阀门） | `0°` 关 / `90°` 开 |
+| `PB1` | 05 | TCRT5000 红外输出 | **遮挡 = `LOW` → 触发急停** |
 
 > ⚠️ **`PA5` 在 4 篇里接了 4 种不同的外设**，换实验时记得**同时改接线和代码**，别让旧接线留在面包板上。
 
@@ -214,8 +252,9 @@ mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
 | --- | --- | --- |
 | `PA13` | SWDIO | 接 ST-Link 的 SWDIO，烧录用 |
 | `PA14` | SWCLK | 接 ST-Link 的 SWCLK，烧录用 |
-| `PA9` | `Serial1` TX | 接 ESP32 的 `D16` (RX2)，**状态回传** |
-| `PA10` | `Serial1` RX | 接 ESP32 的 `D17` (TX2)，**接收指令** |
+| `PA9` | `Serial` TX | 接 ESP32 的 `D16` (RX2)，**状态回传**，9600 8N1 |
+| `PA10` | `Serial` RX | 接 ESP32 的 `D17` (TX2)，**接收指令**，9600 8N1 |
+| `PB6` / `PB7` | OLED SCL / SDA | **硬件 I2C** 默认引脚（`U8g2 ... _HW_I2C`），地址 `0x3C` |
 | `PC13` | 板载 LED（红色） | **低电平点亮** ⚠️ 与外接 LED 相反；**闪一下 = 复位** |
 | `GND` | 共地 | 与 ST-Link、面包板、**外部电源**都必须连在一起 |
 | `3.3V` / `5V` | 供电 | 板子已用 USB 供电时可不接 ST-Link 的 3.3V |
@@ -236,7 +275,13 @@ mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
 | 蜂鸣器上电就一直响 | 模块是**低电平触发**，代码电平写反 | 对调 `digitalWrite` 的 `HIGH` / `LOW` |
 | 蜂鸣器声音太小 | 有源蜂鸣器音量由硬件决定；防尘贴纸挡住了发声孔 | 撕掉顶部 `REMOVE SEAL AFTER WASHING` 贴纸；或改用 5V 供电 |
 | 按键怎么按都没反应 | **杜邦线内部断路**（外皮完好，肉眼看不出来） | 把按键信号脚**直接短接到 GND** 测试；换一根线 |
-| 电机一转，STM32 就复位（板载红灯闪一下） | USB 供电能力不足（约 500 mA），电机启动浪涌把 5V 拉低 | 给电机接**独立 5V 电源**，并与 STM32 **共地** |
+| 电机 / 舵机一动作，STM32 就复位（板载红灯闪一下） | USB 供电能力不足，电机或舵机启动浪涌把 5V 拉低 | 给电机、舵机接**独立 5V 电源**，并与 STM32 **共地** |
+| 红外没遮挡却一直急停（`S:0`） | TCRT5000 触发极性 / 灵敏度与假设相反，或供电不稳 | 代码用 `irState == LOW` 判定遮挡，实测相反就改成 `HIGH`；用模块上电位器调灵敏度；红外模块单独 3.3V 供电 |
+| 警报解除后风扇 / 阀门不自动恢复 | 这是**设计要求**：急停只负责关闭，不负责恢复 | 障碍物移开后需重新下发 `FAN_ON` / `VALVE_OPEN`，或按本地按键 |
+| 警报期间远程 `FAN_ON` 没反应 | **安全锁生效**（预期行为） | 想看互锁是否真的触发，观察串口是否打印 `EMERGENCY_STOP: Object detected!` |
+| DHT11 读到 `nan` / OLED 温度一直是 0 | 上电 1~2 秒内首次读取会失败；或上拉 / 接线问题 | 代码已用 `isnan()` 过滤，等 2 秒再看；宽量程改 DHT22；检查 `PA0` 接线 |
+| OLED 全黑不显示 | I2C 地址不是 `0x3C`，或 SCL / SDA 接错 | 跑一段 I2C 扫描程序确认地址；F103 默认 `PB6`(SCL) / `PB7`(SDA) |
+| 舵机上电抖动 / 直接转到底 | 舵机 5V 供电不足或与 STM32 未共地；初始化前收到随机电平 | 舵机单独 5V 供电并**共地**；`setup()` 里已 `valveServo.write(0)` 归位 |
 | 电机纹丝不动 | TB6612 的 `STBY` 没接高电平；或 `AIN1`/`AIN2` 都是低 | `STBY` 接 `3.3V`；按真值表给 `AIN1`/`AIN2` 一个高一个低 |
 
 > 完整复盘（含报错原文、排查过程与原理）见各篇文档的「🚧 踩坑与排错」章节。
@@ -251,6 +296,7 @@ mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
 | **02** | PWM 原理 · `analogWrite()` · 呼吸灯 · 按键开关 | [📄 PWM 调光与呼吸灯](docs/02_PWM_AND_BREATHING_LED.md) |
 | **03** | 有源 / 无源蜂鸣器 · 边沿检测 · 按键开关 | [📄 按键控制有源蜂鸣器](docs/03_BUTTON_AND_BUZZER.md) |
 | **04** | TB6612FNG · H 桥 · 直流电机 · 多档位状态机 · 供电排错 | [📄 TB6612 驱动直流电机与多档位风扇](docs/04_DC_MOTOR_MULTI_SPEED_FAN.md) |
+| **05** | TCRT5000 红外 · 边缘计算 · **安全互锁** · 任务优先级 · 远程指令与状态上报 | [📄 红外安全互锁与边缘计算](docs/05_EDGE_SAFETY_INTERLOCK.md) |
 
 **建议的练习顺序**
 
@@ -262,7 +308,9 @@ mosquitto_sub -h localhost -t "esp32/status" -v            # 看回传状态
 - [ ] 做 04：先用「按住就转」验证硬件，再实现多档位风扇
 - [ ] 给 04 的电机加**软启动**（`analogWrite` 从 0 缓慢升到目标档位）
 - [ ] 用 `millis()` 替换所有 `delay()`，实现非阻塞的多档位风扇
-- [ ] 接 14 号（NTC）热敏电阻，让风扇**根据温度自动调速**
+- [ ] 接 14 号（NTC）热敏电阻，让风扇**根据温度自动调速**（05 篇已用 DHT11 实现自动温控）
+- [ ] 做 05：先只测红外急停，再接上 `FAN_ON` / `VALVE_OPEN` 远程指令，验证**安全锁**是否生效
+- [ ] 把 05 的警报接入蜂鸣器或继电器，做成「**本地报警 + 云端通知**」的双通道告警
 - [ ] 打开串口（`Serial.print`），把温度、档位打印到电脑上
 - [ ] 定时器中断与外部中断
 - [ ] I2C / SPI 外设（OLED、传感器）
