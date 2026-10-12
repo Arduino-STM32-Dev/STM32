@@ -1,7 +1,10 @@
-# 05 · STM32 端：DHT11 + 风扇（树莓派远程控制）
+# 06 · STM32 端：DHT11 + 风扇（树莓派远程控制）
 
 > 本仓库（Arduino-STM32-Dev/STM32）的固件说明。
 > 完整链路：**树莓派 → MQTT → ESP32 → UART → STM32**。ESP32 端见 esp32 仓库的 esp32-fan-gateway.md。
+>
+> 📌 本篇是**较早的简明联调版**（只有 DHT11 + 风扇 + 按键，上报 `T:/H:/F:`）。
+> 带 **TCRT5000 红外安全互锁**、舵机阀门与 OLED 的完整版本，见 [**05 · 红外安全互锁与边缘计算**](05_EDGE_SAFETY_INTERLOCK.md)。
 
 ## 一、功能
 

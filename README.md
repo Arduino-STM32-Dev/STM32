@@ -15,9 +15,9 @@
 
 一份写给**嵌入式新手**的 STM32 实践教程，目前包含 5 篇，沿着「数字输出 → PWM → 输入 → 功率驱动 → 边缘安全互锁」这条最自然的主线往前走。
 
-`firmware/` 里另外放了三份**面向真实项目**的固件，是「树莓派 → ESP32 → STM32」三级控制链路中的**终端层**实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)：
+`firmware/` 里另外放了四份**面向真实项目**的固件，是「树莓派 → ESP32 → STM32」三级控制链路中的**终端层**实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)：
 
-- [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)：**第一步联调** —— 通过 `Serial` 接收 ESP32 转发的指令，控制板载 LED，先用最小代价把链路跑通。
+- [`pi_control_fan_dht11`](firmware/pi_control_fan_dht11/pi_control_fan_dht11.ino)：**简明联调版** —— DHT11 + 风扇 + 按键，上报 `T:/H:/F:`，对应 [附录 06](docs/06_PI_FAN_DHT11.md)。- [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)：**第一步联调** —— 通过 `Serial` 接收 ESP32 转发的指令，控制板载 LED，先用最小代价把链路跑通。
 - [`servo-control`](firmware/servo-control/servo-control.ino)：DHT11 + TB6612 + 舵机 + OLED 的完整外设版本，本地自动温控。
 - [`edge_compute`](firmware/edge_compute/edge_compute.ino)：**当前主力固件** —— 在上一版基础上加入 **TCRT5000 红外安全互锁**，危险时本地强制急停，并锁死远程的「开启类」指令。
 
@@ -87,9 +87,11 @@ STM32/
 │   │   └── use_button_control_fan.ino
 │   ├── MultiSpeed_Fan/                        ← 教程 04-2：按键循环切换 0~3 档风速
 │   │   └── MultiSpeed_Fan.ino
-│   ├── raspberry-control-stm32/               ← 联调 01：Serial 接收 ESP32 指令，控制板载 LED
+│   ├── pi_control_fan_dht11/                  ← 联调 01（简明版）：DHT11 + 风扇 + 按键，仅上报 T:/H:/F:
+│   │   └── pi_control_fan_dht11.ino
+│   ├── raspberry-control-stm32/               ← 联调 02：Serial 接收 ESP32 指令，控制板载 LED
 │   │   └── raspberry-control-stm32.ino
-│   ├── servo-control/                         ← 联调 02：DHT11 + TB6612 + 舵机 + OLED，本地自动温控
+│   ├── servo-control/                         ← 联调 03：DHT11 + TB6612 + 舵机 + OLED，本地自动温控
 │   │   └── servo-control.ino
 │   └── edge_compute/                          ← 教程 05（主力）：红外安全互锁 + 远程指令 + 状态上报
 │       └── edge_compute.ino
@@ -102,7 +104,8 @@ STM32/
     ├── 02_PWM_AND_BREATHING_LED.md            ← 教程 02：PWM 调光与呼吸灯
     ├── 03_BUTTON_AND_BUZZER.md                ← 教程 03：按键控制有源蜂鸣器
     ├── 04_DC_MOTOR_MULTI_SPEED_FAN.md         ← 教程 04：TB6612 驱动电机与多档位风扇
-    └── 05_EDGE_SAFETY_INTERLOCK.md            ← 教程 05：红外安全互锁与边缘计算
+    ├── 05_EDGE_SAFETY_INTERLOCK.md            ← 教程 05：红外安全互锁与边缘计算
+    └── 06_PI_FAN_DHT11.md                     ← 附录 06：DHT11 + 风扇（树莓派远程控制 · 简明版）
 ```
 
 ---
@@ -297,6 +300,7 @@ T:25.00,H:60.00,F:1,V:0,S:1
 | **03** | 有源 / 无源蜂鸣器 · 边沿检测 · 按键开关 | [📄 按键控制有源蜂鸣器](docs/03_BUTTON_AND_BUZZER.md) |
 | **04** | TB6612FNG · H 桥 · 直流电机 · 多档位状态机 · 供电排错 | [📄 TB6612 驱动直流电机与多档位风扇](docs/04_DC_MOTOR_MULTI_SPEED_FAN.md) |
 | **05** | TCRT5000 红外 · 边缘计算 · **安全互锁** · 任务优先级 · 远程指令与状态上报 | [📄 红外安全互锁与边缘计算](docs/05_EDGE_SAFETY_INTERLOCK.md) |
+| **06** | （简明版）DHT11 + 风扇 · 树莓派远程控制最小实现 | [📄 STM32 端 DHT11 + 风扇](docs/06_PI_FAN_DHT11.md) |
 
 **建议的练习顺序**
 
