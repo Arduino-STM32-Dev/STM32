@@ -1,7 +1,7 @@
 # 🔧 STM32 入门教程：从点亮第一颗 LED 到驱动直流电机
 
 > **不用 STM32CubeMX，也不用啃寄存器手册。**
-> 本教程带你从零把 STM32F103 跑起来 —— 装环境、接线、烧录、排错，再一路做呼吸灯、蜂鸣器、多档位风扇，最后接入无线控制链路，做出一个带**红外安全互锁**的边缘执行终端，每一步都可以照着复现。
+> 本教程带你从零把 STM32F103 跑起来 —— 装环境、接线、烧录、排错，再一路做呼吸灯、蜂鸣器、多档位风扇，最后接入无线控制链路，做出一个带**红外安全互锁**、支持**远程无级调速**的边缘执行终端，每一步都可以照着复现。
 
 [![Platform](https://img.shields.io/badge/platform-STM32F103C8T6-03234B?logo=stmicroelectronics&logoColor=white)](https://www.st.com/)
 [![IDE](https://img.shields.io/badge/IDE-Arduino%20IDE%202.x-00979D?logo=arduino&logoColor=white)](https://www.arduino.cc/en/software)
@@ -13,13 +13,15 @@
 
 ## 📖 这是什么
 
-一份写给**嵌入式新手**的 STM32 实践教程，目前包含 5 篇，沿着「数字输出 → PWM → 输入 → 功率驱动 → 边缘安全互锁」这条最自然的主线往前走。
+一份写给**嵌入式新手**的 STM32 实践教程，目前包含 **5 篇正文 + 4 篇联调附录**，沿着「数字输出 → PWM → 输入 → 功率驱动 → 边缘安全互锁 → 远程无级调速」这条最自然的主线往前走。
 
-`firmware/` 里另外放了四份**面向真实项目**的固件，是「树莓派 → ESP32 → STM32」三级控制链路中的**终端层**实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)：
+`firmware/` 里另外放了五份**面向真实项目**的固件，是「树莓派 → ESP32 → STM32」三级控制链路中的**终端层**实现，见 [🔗 物联网联调](#-物联网联调接收-esp32-的无线指令)：
 
-- [`pi_control_fan_dht11`](firmware/pi_control_fan_dht11/pi_control_fan_dht11.ino)：**简明联调版** —— DHT11 + 风扇 + 按键，上报 `T:/H:/F:`，对应 [附录 06](docs/06_PI_FAN_DHT11.md)。- [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)：**第一步联调** —— 通过 `Serial` 接收 ESP32 转发的指令，控制板载 LED，先用最小代价把链路跑通。
+- [`PWM-FAN`](firmware/PWM-FAN/PWM-FAN.ino)：**当前主力固件** —— 在 `edge_compute` 基础上加入 **`FAN_PWM:0~255` 无级调速**，`currentFanSpeed` 贯穿本地按键 / 红外急停 / 自动温控 / 远程指令 / OLED / 上报六条路径，对应 [附录 07](docs/07_PWM_SPEED_CONTROL.md)。
+- [`edge_compute`](firmware/edge_compute/edge_compute.ino)：**红外安全互锁版** —— 用 **TCRT5000** 做最高优先级任务，危险时本地强制急停，并锁死远程的「开启类」指令，对应 [教程 05](docs/05_EDGE_SAFETY_INTERLOCK.md)。
 - [`servo-control`](firmware/servo-control/servo-control.ino)：DHT11 + TB6612 + 舵机 + OLED 的完整外设版本，本地自动温控。
-- [`edge_compute`](firmware/edge_compute/edge_compute.ino)：**当前主力固件** —— 在上一版基础上加入 **TCRT5000 红外安全互锁**，危险时本地强制急停，并锁死远程的「开启类」指令。
+- [`pi_control_fan_dht11`](firmware/pi_control_fan_dht11/pi_control_fan_dht11.ino)：**简明联调版** —— DHT11 + 风扇 + 按键，上报 `T:/H:/F:`，对应 [附录 06](docs/06_PI_FAN_DHT11.md)。
+- [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)：**第一步联调** —— 通过 `Serial` 接收 ESP32 转发的指令，控制板载 LED，先用最小代价把链路跑通。
 
 STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡住，所以本教程改用 **Arduino IDE + STM32duino 核心库**的路线：不装重型 IDE，Arduino 生态的库即装即用，先把硬件跑通、把信心建立起来。等以后需要寄存器级或 HAL 开发时，再平滑切换到 STM32CubeIDE 也完全来得及。
 
@@ -33,6 +35,7 @@ STM32CubeMX 的安装包需要登录 ST 账号下载，网络受限时极易卡�
 - 用 **TB6612FNG** 驱动直流电机，写一个多档位状态机
 - 用 **DHT11** 采集温湿度、**舵机**做阀门、**U8g2** 驱动 OLED，并用 `millis()` 把 6 个任务组织成非阻塞结构
 - **边缘安全互锁**：用 TCRT5000 红外光电开关做最高优先级任务，危险时本地强制急停，并锁死远程的开启类指令
+- **远程无级调速**：用 `FAN_PWM:0~255` 指令把风扇转速变成一等状态（`currentFanSpeed`），在本地按键 / 红外急停 / 自动温控 / 远程指令 / OLED / 串口上报之间保持一致
 - 硬件排错的基本功：**短接法**查杜邦线、从板载 LED 判断**欠压复位**、**独立供电 + 共地**
 - 用 **`Serial` + `readStringUntil('\n')`** 和 ESP32 做 UART 联调，接入 MQTT 无线控制链路
 
@@ -93,8 +96,10 @@ STM32/
 │   │   └── raspberry-control-stm32.ino
 │   ├── servo-control/                         ← 联调 03：DHT11 + TB6612 + 舵机 + OLED，本地自动温控
 │   │   └── servo-control.ino
-│   └── edge_compute/                          ← 教程 05（主力）：红外安全互锁 + 远程指令 + 状态上报
-│       └── edge_compute.ino
+│   ├── edge_compute/                          ← 联调 04：红外安全互锁 + 远程指令 + 状态上报
+│   │   └── edge_compute.ino
+│   └── PWM-FAN/                               ← 联调 05（主力）：FAN_PWM 无级调速 + 安全互锁 + OLED 显示速度
+│       └── PWM-FAN.ino
 ├── Image_and_video/                           ← 接线实拍与演示素材
 │   ├── green_led_breadboard.jpg
 │   ├── Buzzer_test.jpg
@@ -105,7 +110,9 @@ STM32/
     ├── 03_BUTTON_AND_BUZZER.md                ← 教程 03：按键控制有源蜂鸣器
     ├── 04_DC_MOTOR_MULTI_SPEED_FAN.md         ← 教程 04：TB6612 驱动电机与多档位风扇
     ├── 05_EDGE_SAFETY_INTERLOCK.md            ← 教程 05：红外安全互锁与边缘计算
-    └── 06_PI_FAN_DHT11.md                     ← 附录 06：DHT11 + 风扇（树莓派远程控制 · 简明版）
+    ├── 06_PI_FAN_DHT11.md                     ← 附录 06：DHT11 + 风扇（树莓派远程控制 · 简明版）
+    ├── 07_PWM_SPEED_CONTROL.md                ← 附录 07：ESP32 远程无级调速（FAN_PWM）与 OLED 速度显示
+    └── 08_BUG_REPORT.md                       ← 代码审计报告 · Bug Finder（14 项缺陷清单）
 ```
 
 ---
@@ -171,9 +178,9 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 ```text
 [树莓派 5 · MQTT Broker]       订阅 home/fan/status
       ⬆ WiFi / MQTT  主题 pi/to/esp32
-[ESP32 · 无线网关]  firmware/cache_control（断网缓存 + 非阻塞队列）
+[ESP32 · 无线网关]  firmware/external_cache（W25Q64 断电记忆缓存 + 非阻塞队列）
       ⬇ UART 9600, 8N1
-[STM32 · 执行终端]  firmware/edge_compute（红外安全互锁）
+[STM32 · 执行终端]  firmware/PWM-FAN（FAN_PWM 无级调速 + 红外安全互锁）
 ```
 
 **接线（注意 TX / RX 交叉）：**
@@ -188,13 +195,14 @@ https://github.com/stm32duino/BoardManagerFiles/raw/main/package_stmicroelectron
 
 **跑通步骤：**
 
-1. 烧录 [`firmware/edge_compute/edge_compute.ino`](firmware/edge_compute/edge_compute.ino) 到 STM32（想先跑最小链路，也可以先用 [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)）。
+1. 烧录 [`firmware/PWM-FAN/PWM-FAN.ino`](firmware/PWM-FAN/PWM-FAN.ino) 到 STM32（想先跑最小链路，也可以先用 [`raspberry-control-stm32`](firmware/raspberry-control-stm32/raspberry-control-stm32.ino)）。
 2. 按上表接好三根线，ESP32 烧录网关固件 —— 见 [esp32 仓库](https://github.com/Arduino-STM32-Dev/esp32)。
 3. 在树莓派终端下发指令：
 
 ```bash
 mosquitto_pub -h localhost -t "pi/to/esp32" -m "FAN_ON"       # 开风扇（PWM 150）
 mosquitto_pub -h localhost -t "pi/to/esp32" -m "FAN_OFF"      # 关风扇
+mosquitto_pub -h localhost -t "pi/to/esp32" -m "FAN_PWM:80"   # 【新增】无级调速：0~255，越小越安静
 mosquitto_pub -h localhost -t "pi/to/esp32" -m "VALVE_OPEN"   # 开阀门（舵机 90°）
 mosquitto_pub -h localhost -t "pi/to/esp32" -m "VALVE_CLOSE"  # 关阀门（舵机 0°）
 mosquitto_sub -h localhost -t "home/fan/status" -v            # 看回传状态
@@ -206,13 +214,14 @@ mosquitto_sub -h localhost -t "home/fan/status" -v            # 看回传状态
 | --- | --- | --- |
 | `FAN_ON` | `analogWrite(PWMA, 150)`，风扇转动 | ⚠️ 警报时**被忽略** |
 | `FAN_OFF` | `analogWrite(PWMA, 0)`，风扇停止 | ✅ 永远执行 |
+| **`FAN_PWM:0~255`** | **`analogWrite(PWMA, 值)`，无级调速；`0` 等同于关机** | ⚠️ 警报时**被忽略** |
 | `VALVE_OPEN` | `valveServo.write(90)`，阀门打开 | ⚠️ 警报时**被忽略** |
 | `VALVE_CLOSE` | `valveServo.write(0)`，阀门关闭 | ✅ 永远执行 |
 
 **回传格式（每 2 秒一行）：**
 
 ```text
-T:25.00,H:60.00,F:1,V:0,S:1
+T:25.00,H:60.00,F:1,Spd:200,V:0,S:1
 ```
 
 | 字段 | 含义 |
@@ -220,10 +229,15 @@ T:25.00,H:60.00,F:1,V:0,S:1
 | `T:` | 温度（℃） |
 | `H:` | 湿度（%） |
 | `F:` | 风扇状态，`1` 开 / `0` 关 |
+| **`Spd:`** | **当前风扇 PWM 速度，`0~255`（0 即停转）** |
 | `V:` | 阀门状态，`1` 开 / `0` 关 |
 | `S:` | **安全状态，`1` 安全 / `0` 警报** |
 
-> 🛡️ **本地安全优先**：`edge_compute` 把红外检测放在 `loop()` 的**任务 1**。一旦遮挡触发，它不等云端指令，直接 `analogWrite(PWMA, 0)` + `valveServo.write(0)` 并置位 `isSafetyAlert`；此后所有**开启类**动作（本地按键、自动温控、远程 `FAN_ON` / `VALVE_OPEN`）全部被锁死，而**关闭类**指令始终有效 —— 也就是「**危险只能让系统停下来，不能让系统动起来**」。详见 [教程 05](docs/05_EDGE_SAFETY_INTERLOCK.md)。
+> ⚠️ **解析方式变更**：`Spd:` 插在 `F:` 与 `V:` **之间**，所以树莓派侧必须按 **`key:value` 键名解析**（例如 `cmd.split(',')` 后取 `pair.split(':')`），**不能再用固定下标**，否则 `V` / `S` 会整体错位。详见 [附录 07](docs/07_PWM_SPEED_CONTROL.md)。
+
+> 🐞 **已知缺陷**：DHT11 自动温控（每 2 秒）会把远程设定的速度**覆盖回 150**，即「手动调速只能维持两秒」。修复方案（`MODE_AUTO` / `MODE_MANUAL` 状态机）见 [docs/08](docs/08_BUG_REPORT.md#-p0-1自动温控覆盖手动调速致命功能层)。
+
+> 🛡️ **本地安全优先**：`edge_compute` / `PWM-FAN` 把红外检测放在 `loop()` 的**任务 1**。一旦遮挡触发，它不等云端指令，直接 `analogWrite(PWMA, 0)` + `valveServo.write(0)` 并置位 `isSafetyAlert`；此后所有**开启类**动作（本地按键、自动温控、远程 `FAN_ON` / `FAN_PWM` / `VALVE_OPEN`）全部被锁死，而**关闭类**指令始终有效 —— 也就是「**危险只能让系统停下来，不能让系统动起来**」。详见 [教程 05](docs/05_EDGE_SAFETY_INTERLOCK.md)。
 
 > ⚠️ **换行符约定**：STM32 用 `readStringUntil('\n')` 解析，所以 ESP32 必须用 `println()` 发送；STM32 回传同样用 `println()`，ESP32 才能按行读到。两端成对使用，否则会收到空串。
 
@@ -238,7 +252,7 @@ T:25.00,H:60.00,F:1,V:0,S:1
 | `PA5` | 01 | 外部 LED | **高电平点亮** |
 | `PA5` | 02 | PWM 调光输出 | `analogWrite()` 0~255 |
 | `PA5` | 03 | 蜂鸣器模块 `I/O` | 见 [03 篇触发极性说明](docs/03_BUTTON_AND_BUZZER.md) |
-| `PA5` | 04 | TB6612 的 `PWMA` | `analogWrite()` 0~255 |
+| `PA5` | 04 / 05 / 07 | TB6612 的 `PWMA`（`FAN_ON` 固定 150，`FAN_PWM:0~255` 无级调速） | `analogWrite()` 0~255 |
 | `PA1` | 02 / 03 | 按键（`INPUT_PULLUP`） | 按下 = `LOW` |
 | `PA2` | 04 / 05 | 按键（`INPUT_PULLUP`） | 按下 = `LOW` |
 | `PB12` | 04 / 05 | TB6612 的 `AIN1` | 方向控制 |
@@ -286,6 +300,11 @@ T:25.00,H:60.00,F:1,V:0,S:1
 | OLED 全黑不显示 | I2C 地址不是 `0x3C`，或 SCL / SDA 接错 | 跑一段 I2C 扫描程序确认地址；F103 默认 `PB6`(SCL) / `PB7`(SDA) |
 | 舵机上电抖动 / 直接转到底 | 舵机 5V 供电不足或与 STM32 未共地；初始化前收到随机电平 | 舵机单独 5V 供电并**共地**；`setup()` 里已 `valveServo.write(0)` 归位 |
 | 电机纹丝不动 | TB6612 的 `STBY` 没接高电平；或 `AIN1`/`AIN2` 都是低 | `STBY` 接 `3.3V`；按真值表给 `AIN1`/`AIN2` 一个高一个低 |
+| 远程 `FAN_PWM:200` 只快了两秒，又变回 150 | **DHT11 自动温控每 2 秒写一次风扇**，把手动速度覆盖了 | 已知缺陷（[docs/08 P0-1](docs/08_BUG_REPORT.md)）：加 `MODE_AUTO` / `MODE_MANUAL` 状态机隔离；临时办法是把自动温控阈值调高 |
+| 发 `FAN_PWM:abc` 风扇反而停了 | `String::toInt()` 遇到非法输入**静默返回 `0`**，被当成「停转」 | 先校验字符串全为数字再 `toInt()`，非法则丢弃该指令并回报错误 |
+| 偶尔收到半条指令（如 `FAN_PW`）却被执行 / 无响应 | `readStringUntil('\n')` 遇上 `Serial.setTimeout(10)`：10ms 内没等到换行，就**把半条当完整指令返回** | 改成逐字节收进缓冲区、见到 `'\n'` 才解析；并加指令白名单 + 长度校验 |
+| 舵机一动作，风扇转速就抽风 | SG90（Servo 库）与 `analogWrite(PA5)` 的 PWM **可能落在同一个硬件定时器**上 | 把风扇 PWM 换到别的定时器通道，或让舵机改用其他定时器，按 [docs/08 P1-1](docs/08_BUG_REPORT.md) 的方法实测确认 |
+| 断电重启后风扇自转 / 阀门保持打开 | 代码不做状态记忆，上电按 `setup()` 的默认值归位 | 属预期行为；若需要记忆，把状态写入 Flash / EEPROM 后上电恢复 |
 
 > 完整复盘（含报错原文、排查过程与原理）见各篇文档的「🚧 踩坑与排错」章节。
 
@@ -301,6 +320,8 @@ T:25.00,H:60.00,F:1,V:0,S:1
 | **04** | TB6612FNG · H 桥 · 直流电机 · 多档位状态机 · 供电排错 | [📄 TB6612 驱动直流电机与多档位风扇](docs/04_DC_MOTOR_MULTI_SPEED_FAN.md) |
 | **05** | TCRT5000 红外 · 边缘计算 · **安全互锁** · 任务优先级 · 远程指令与状态上报 | [📄 红外安全互锁与边缘计算](docs/05_EDGE_SAFETY_INTERLOCK.md) |
 | **06** | （简明版）DHT11 + 风扇 · 树莓派远程控制最小实现 | [📄 STM32 端 DHT11 + 风扇](docs/06_PI_FAN_DHT11.md) |
+| **07** | `FAN_PWM:0~255` 无级调速 · `currentFanSpeed` 一等状态 · OLED 显示速度 · `Spd` 字段与解析 | [📄 ESP32 远程无级调速与 OLED 显示](docs/07_PWM_SPEED_CONTROL.md) |
+| **08** | 代码审计报告 · Bug Finder：2 个致命 + 4 个高危缺陷、复现步骤、修复补丁、自查命令 | [📄 代码审计报告](docs/08_BUG_REPORT.md) |
 
 **建议的练习顺序**
 
@@ -314,6 +335,8 @@ T:25.00,H:60.00,F:1,V:0,S:1
 - [ ] 用 `millis()` 替换所有 `delay()`，实现非阻塞的多档位风扇
 - [ ] 接 14 号（NTC）热敏电阻，让风扇**根据温度自动调速**（05 篇已用 DHT11 实现自动温控）
 - [ ] 做 05：先只测红外急停，再接上 `FAN_ON` / `VALVE_OPEN` 远程指令，验证**安全锁**是否生效
+- [ ] 做 07：用 `FAN_PWM:0` → `60` → `150` → `255` 找出「噪音 / 风量」的最佳平衡点，观察 OLED 与上报里的 `Spd`
+- [ ] 给 07 加**档位映射**（如 静音 / 标准 / 强力 三档），并修掉自动温控覆盖手动调速的问题（见 [docs/08](docs/08_BUG_REPORT.md)）
 - [ ] 把 05 的警报接入蜂鸣器或继电器，做成「**本地报警 + 云端通知**」的双通道告警
 - [ ] 打开串口（`Serial.print`），把温度、档位打印到电脑上
 - [ ] 定时器中断与外部中断
